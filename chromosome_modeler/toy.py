@@ -110,6 +110,44 @@ def make_pair_restraints(ensemble, num_restraints, cutoff_distance=None):
 
     return restraints
 
+def superimpose_model(model, reference):
+    from numpy import eye, sign, mean, matrix
+    from numpy.linalg import svd, det
+
+    # Reorient the matrices, because this algorithm expects them to be 3xN.  
+    # At the same time, convert them into matrices to make some of the 
+    # following operations more convenient.
+
+    raw_target = matrix(reference.T)
+    raw_mobile = matrix(model.T)
+
+    # Translate both structures to the origin, so that they only differ by a 
+    # simple rotation.  Save the translation vector that can be used to 
+    # position the mobile structure on top of the target one after the 
+    # rotation has been applied.
+
+    target = raw_target - mean(raw_target, 1)
+    mobile = raw_mobile - mean(raw_mobile, 1)
+
+    translation = mean(raw_target, 1)
+
+    # Calculate the rotation that transforms the mobile structure into the 
+    # best possible alignment with the target structure.  I don't really 
+    # understand how this works, although the website I took it from had a 
+    # very complete description. 
+
+    C = mobile * target.T
+    V, S, W = svd(C)
+
+    I = eye(3)
+    I[2,2] = sign(det(C))
+
+    rotation = W.T * I * V.T
+
+    # Save the aligned coordinates.
+    
+    return np.array(rotation * mobile + translation).T
+
 def evaluate_model(model, reference, mode='rmsd'):
     """
     Score the similarity between a model and its true reference structure.  
