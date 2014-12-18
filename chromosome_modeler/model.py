@@ -39,7 +39,7 @@ from __future__ import division
 from . import data, utils
 import IMP, IMP.core, IMP.atom, IMP.container
 from IMP.algebra import Vector3D
-import sys, numpy as np, scipy as sp
+import sys, itertools, collections, numpy as np, scipy as sp
 
 def load_microscopy_restraints():
     raise NotImplementedError
@@ -55,8 +55,6 @@ def define_system(num_particles, **kwargs):
     low-scoring conformations.
     """
 
-    ## Define simulation parameters
-
     recursive_kwargs = kwargs.copy()
     recursive_kwargs.pop('initial_coords', None)
 
@@ -65,10 +63,10 @@ def define_system(num_particles, **kwargs):
     particle_radius = float(kwargs.pop('radius', 0.5))
     particle_mass = float(kwargs.pop('mass', 1.0))
     initial_coords = kwargs.pop('initial_coords', 'random')
-    nonbonded = kwargs.pop('nonbonded', 'lennard-jones')
+    nonbonded = kwargs.pop('nonbonded', 'excluded-volume')
     k_bonded = float(kwargs.pop('k_bonded', 1.0))
-    k_nonbonded = float(kwargs.pop('k_nonbonded', 1.0))
-    k_xyz = float(kwargs.pop('k_xyz', 1.0))
+    k_nonbonded = float(kwargs.pop('k_nonbonded', 5.0))
+    k_xyz = float(kwargs.pop('k_xyz', 10.0))
     k_pair = float(kwargs.pop('k_pair', 1.0))
     lj_well_depth = float(kwargs.pop('lj_depth', 1e-2))
     nblist_cutoff = float(kwargs.pop('nblist_cutoff', 3.0 * particle_radius))
@@ -103,7 +101,7 @@ def define_system(num_particles, **kwargs):
             IMP.core.XYZ(p).set_coordinates(xyz)
 
     elif initial_coords == 'interpolated':
-        coords = build_interpolated_model(num_particles, **recursive_kwargs)
+        coords = build_interpolated_model(num_particles, xyz_restraints)
         for xyz, p in zip(coords, particle_list):
             IMP.core.XYZ(p).set_coordinates(xyz)
 
@@ -117,7 +115,7 @@ def define_system(num_particles, **kwargs):
             IMP.core.XYZ(p).set_coordinates(xyz)
 
     else:
-        raise ValueError("unknown config '{}'".format(config))
+        raise ValueError("unknown initial_coords setting: '{}'".format(initial_coords))
 
     particles = IMP.container.ListSingletonContainer(particle_list)
 
@@ -130,16 +128,17 @@ def define_system(num_particles, **kwargs):
 
     ## Non-bonded restraints
 
-    if nonbonded == 'lennard-jones':
+    if nonbonded == 'excluded-volume':
+        res = IMP.core.ExcludedVolumeRestraint(particles, k_nonbonded)
+        res.set_name("Excluded Volume Restraint")
+
+    elif nonbonded == 'lennard-jones':
+        print 'Warning: Using Lennard-Jones!'
         nbl = IMP.container.ClosePairContainer(particles, nblist_cutoff)
         nbl.add_pair_filter(IMP.container.ExclusiveConsecutivePairFilter())
         fs = IMP.atom.ForceSwitch(0.8 * nblist_cutoff, nblist_cutoff)
         ljs = IMP.atom.LennardJonesPairScore(fs)
         res = IMP.container.PairsRestraint(ljs, nbl, "Lennard-Jones Restraint")
-
-    elif nonbonded == 'excluded-volume':
-        res = IMP.core.ExcludedVolumeRestraint(particles, k_nonbonded)
-        res.set_name("Excluded Volume Restraint")
 
     else:
         raise ValueError("unknown non-bonded restraint: '{}'".format(nonbonded))
@@ -172,6 +171,57 @@ def define_system(num_particles, **kwargs):
 
     return system
 
+def define_protocol(iterations, temperatures):
+    return zip(itertools.repeat(iterations // len(temperatures)), temperatures)
+
+def define_nagano_protocol():
+    # In Nagano et al., the temperature is smoothly ramped down between every 
+    # iteration.  I don't think this is possible with IMP right now, so instead 
+    # the temperature is ramped down in steps in such a way that the average 
+    # temperature is largely the same.  Some creative license is taken at the 
+    # end to make sure the temperature gets really cold right before the end so 
+    # the simulation can settle into the nearest minima.
+    return [
+            (1000, 5000.00),
+            (1200, 2500.00),
+            (1200, 1500.00),
+            (1200,  500.00),
+            (3400,  150.00),
+            (20000,  15.00),
+            (2000,    0.01),
+    ]
+
+def define_static_protocol(iterations, temperature=1.0):
+    return [(int(float(iterations)), temperature)]
+
+def define_linear_protocol(iterations, start_temp, end_temp, steps):
+    temperatures = np.linspace(start_temp, end_temp, steps)
+    return define_protocol(iterations, steps, temperatures)
+
+def equilibrate_system(system, **kwargs):
+    k_equ = float(kwargs.pop('k_equ', 1.0))
+    w_equ = float(kwargs.pop('w_equ', 1.0))
+    frames = int(kwargs.pop('frames', 10))
+    steps = int(kwargs.pop('steps', 500))
+
+    # Use molecular dynamics to equilibrate the system.
+
+    root_res = system.get_root_restraint_set()
+    target_weight = root_res.get_weight()
+
+    def weight_updater(n, N):   # (no fold)
+        weight = target_weight * min(10*n/N, 1)
+        root_res.set_weight(weight)
+
+    run_molecular_dynamics(
+            system,
+            frames=frames,
+            steps=steps//2,
+            #callback=weight_updater,
+            **kwargs)
+
+    return system
+
 def run_minimization(system):
     """
     Use a gradient-minimization algorithm to search for a low-scoring 
@@ -194,39 +244,56 @@ def run_molecular_dynamics(system, **kwargs):
 
     # The in(float(...)) idiom makes it easier for values like '1e5' to be 
     # specified on the command line and passed into this function directly.
-
-    steps = int(float(kwargs.pop('steps', 1e4)))
+    
+    protocol = kwargs.pop('protocol', [(3e4, 1.0)])
+    iterations = int(sum(i for i,T in protocol))
+    progress_bar = bool(kwargs.pop('progress_bar', False))
     movie_path = kwargs.pop('movie_path', None)
-    frames = int(float(kwargs.pop('frames', 100 if movie_path else 1)))
-    temperature = float(kwargs.pop('temperature', 1e-2))
-    progress_bar = bool(kwargs.pop('progress_bar', bool(movie_path)))
+    movie_frames = int(float(kwargs.pop('frames', 100)))
 
     utils.check_all_kwargs_used(kwargs)
 
     # Optimize using MD.
 
     num_particles = system.get_number_of_particles()
-    trajectory = np.zeros((frames, num_particles, 3))
+    trajectory = np.zeros((movie_frames, num_particles, 3))
+
+    thermostat = IMP.atom.VelocityScalingOptimizerState(
+            system, system.get_particles(), 0.0)
 
     md = IMP.atom.MolecularDynamics(system)
-    md.add_optimizer_state(
-            IMP.atom.VelocityScalingOptimizerState(
-                system, system.get_particles(), temperature))
+    md.add_optimizer_state(thermostat)
 
     if movie_path:
         writer = IMP.display.PymolWriter(movie_path)
         convert_system_to_movie_frame(writer, system)
+        iterations_per_frame = iterations // movie_frames
+    else:
+        iterations_per_frame = np.inf
 
-    for frame in range(frames):
-        md.optimize(steps // frames)
-        trajectory[frame] = convert_system_to_coords(system)
+    movie_frame = 0
 
-        if movie_path:
-            convert_system_to_movie_frame(writer, system)
+    for iterations_this_step, temperature in protocol:
+        thermostat.set_temperature(temperature)
 
-        if progress_bar:
-            sys.stdout.write('\r[{}/{}]'.format(frame+1, frames))
-            sys.stdout.flush()
+        while iterations_this_step >= iterations_per_frame:
+            md.optimize(iterations_per_frame)
+
+            trajectory[movie_frame] = convert_system_to_coords(system)
+            iterations_this_step -= iterations_per_frame
+            iterations_per_frame = iterations // movie_frames
+            movie_frame += 1
+
+            if movie_path:
+                convert_system_to_movie_frame(writer, system)
+
+            if progress_bar:
+                sys.stdout.write('\r[{}/{}]'.format(movie_frame, movie_frames))
+                sys.stdout.flush()
+
+        if iterations_this_step:
+            md.optimize(iterations_this_step)
+            iterations_per_frame -= iterations_this_step
 
     if progress_bar:
         print
@@ -288,26 +355,23 @@ def build_interpolated_model(num_particles, xyz_restraints):
     return model
 
 def build_minimized_model(num_particles, **kwargs):
-    system = define_system(num_particles, **kwargs)
+    initial_coords = kwargs.pop('initial_coords', 'interpolated' if 'xyz_restraints' in kwargs else 'random')
+    system = define_system(num_particles, initial_coords=initial_coords, **kwargs)
     return run_minimization(system)
 
 def build_md_model(num_particles, **kwargs):
-    return build_md_trajectory(num_particles, **kwargs)[0]
+    return build_md_trajectory(num_particles, **kwargs)[-1]
 
 def build_md_trajectory(num_particles, **kwargs):
-    system = define_system(num_particles, check_args=False, **kwargs)
+    initial_coords = kwargs.pop('initial_coords', 'minimized' if 'xyz_restraints' in kwargs else 'random')
+    system = define_system(num_particles, check_args=False, initial_coords=initial_coords, **kwargs)
     return run_molecular_dynamics(system, check_args=False, **kwargs)
 
-def build_md_trajectories(
-        num_particles, xyz_restraint_traj=None, pair_restraint_traj=None,
-        **kwargs):
-
-    assert xyz_restraint_traj or pair_restraint_traj
-
+def build_md_trajectories(num_particles, **kwargs):
     trajectories = []
     restraints = zip(
-            xyz_restraint_traj or itertools.repeat(None),
-            pair_restraint_traj or itertools.repeat(None))
+            kwargs.pop('xyz_restraint_traj', itertools.repeat(None)),
+            kwargs.pop('pair_restraint_traj', itertools.repeat(None)))
 
     for xyz_restraints, pair_restraints in restraints:
         trajectory = build_md_trajectory(

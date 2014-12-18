@@ -40,7 +40,7 @@ class pair_restraints (collections.Counter):
 
 def are_coords(coords):
     try: require_coords(coords)
-    except AssertionError: return False
+    except: return False
     else: return True
 
 

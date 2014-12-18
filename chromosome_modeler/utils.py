@@ -10,8 +10,8 @@ def check_all_kwargs_used(kwargs):
     kwargs = kwargs.copy()
     if kwargs and kwargs.pop('check_args', True):
         message = "unrecognized keyword argument{}: {}"
+        plural = '' if len(kwargs) == 1 else 's'
         unknown_args = ', '.join("'{}'".format(k) for k in kwargs)
-        plural = '' if len(unknown_args) == 1 else 's'
         raise TypeError(message.format(plural, unknown_args))
 
 
