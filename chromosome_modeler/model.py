@@ -36,10 +36,9 @@ pair_restraints : {set(int) : int}
 
 from __future__ import division
 
+import sys, itertools, collections
+import numpy as np, scipy as sp
 from . import data, utils
-import IMP, IMP.core, IMP.atom, IMP.container
-from IMP.algebra import Vector3D
-import sys, itertools, collections, numpy as np, scipy as sp
 
 def load_microscopy_restraints():
     raise NotImplementedError
@@ -54,6 +53,8 @@ def define_system(num_particles, **kwargs):
     initial positions.  Other functions are provided to search this system for 
     low-scoring conformations.
     """
+
+    import IMP, IMP.core, IMP.atom, IMP.container
 
     recursive_kwargs = kwargs.copy()
     recursive_kwargs.pop('initial_coords', None)
@@ -196,7 +197,7 @@ def define_static_protocol(iterations, temperature=1.0):
 
 def define_linear_protocol(iterations, start_temp, end_temp, steps):
     temperatures = np.linspace(start_temp, end_temp, steps)
-    return define_protocol(iterations, steps, temperatures)
+    return define_protocol(iterations, temperatures)
 
 def equilibrate_system(system, **kwargs):
     k_equ = float(kwargs.pop('k_equ', 1.0))
@@ -229,6 +230,7 @@ def run_minimization(system):
     find local minima, the coordinates it returns may not be that good.
     """
 
+    import IMP, IMP.core, IMP.atom, IMP.container
     minimizer = IMP.core.ConjugateGradients(system)
     minimizer.optimize(1000)
     return convert_system_to_coords(system)
@@ -241,6 +243,8 @@ def run_molecular_dynamics(system, **kwargs):
     low-scoring states.  The coordinates returned by this function depend 
     heavily on the parameters given, so expect to have to optimize a bit.
     """
+
+    import IMP, IMP.core, IMP.atom, IMP.container
 
     # The in(float(...)) idiom makes it easier for values like '1e5' to be 
     # specified on the command line and passed into this function directly.
@@ -391,6 +395,8 @@ def search_for_best_trajectory():
 
 
 def convert_system_to_coords(system):
+    import IMP, IMP.core, IMP.atom, IMP.container
+
     particles = system.get_particles()
     num_particles = len(particles)
 
@@ -401,6 +407,8 @@ def convert_system_to_coords(system):
     return coords
 
 def convert_system_to_movie_frame(writer, system):
+    import IMP, IMP.core, IMP.atom, IMP.container
+
     particle_list = system.get_particles()
     particles = IMP.container.ListSingletonContainer(particle_list)
     neighbors = IMP.container.ConsecutivePairContainer(particle_list)
