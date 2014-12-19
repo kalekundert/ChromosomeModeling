@@ -1,14 +1,15 @@
 #!/usr/bin/env python2
 
+import sys, time, json; sys.path.append('.')
 import chromosome_modeler as cmod
-import sys, time, json
+from libraries import utils
+
+params = utils.read_params()
+num_particles = params['num_particles']
+num_xyz_restraints = params['num_xyz_restraints']
+num_pair_restraints = params['num_pair_restraints']
 
 models = {}
-
-num_particles = int(sys.argv[1])
-num_xyz_restraints = int(sys.argv[2])
-num_pair_restraints = int(sys.argv[3])
-
 reference = cmod.toy.make_hilbert_reference(num_particles)
 xyz_restraints = cmod.toy.make_xyz_restraints(reference, num_xyz_restraints)
 pair_restraints = cmod.toy.make_pair_restraints(reference, num_pair_restraints)
@@ -75,11 +76,11 @@ for key, model in models.items():
     cmod.export_to_pdb(path, model, reference, xyz_restraints)
 
 results = {
-        key: cmod.toy.evaluate_model(model, reference)
-        for key, model in models.items()
+        'n_xyz': num_xyz_restraints,
+        'n_pair': num_pair_restraints,
 }
-results['n_xyz'] = num_xyz_restraints
-results['n_pair'] = num_pair_restraints
+for key, model in models.items():
+    results[key] = cmod.toy.evaluate_model(model, reference)
 
 with open(json_path, 'w') as file:
     json.dump(results, file)
