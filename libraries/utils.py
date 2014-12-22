@@ -17,8 +17,8 @@ def running_on_cluster():
     from socket import gethostname
     return gethostname() == 'iq218'
 
-def submit_job(command, params):
-    from subprocess import Popen, STDIN, PIPE
+def submit_job(command, params, test_run=False):
+    from subprocess import Popen, PIPE
 
     clear_directories('inputs', 'stdout', 'stderr')
 
@@ -28,9 +28,10 @@ def submit_job(command, params):
     qsub_command = (
             'qsub',
             '-cwd',
+            '-S', '/bin/sh',
             '-o', 'stdout',
             '-e', 'stderr',
-            '-l', 'h_rt=6:00:00',
+            '-l', 'h_rt=6:00:00' if not test_run else 'h_rt=0:30:00',
             '-l', 'mem_free=1G',
             '-l', 'arch=linux-x64',
             '-l', 'netapp=1G',
@@ -39,11 +40,11 @@ def submit_job(command, params):
     )
 
     process = Popen(qsub_command, stdin=PIPE)
-    process.stdin.write('#!/usr/bin/env sh')
-    process.stdin.write('module load imp-fast')
-    process.stdin.write('PYTHONPATH=.:$PYTHONPATH')
+    process.stdin.write('module load imp-fast;')
+    process.stdin.write('PYTHONPATH=.:$PYTHONPATH;')
     process.stdin.write('/netapp/home/kale/.local/bin/python2.7 ' + command)
     process.stdin.close()
+    process.wait()
 
 def read_params():
     task_id = int(os.environ['SGE_TASK_ID']) - 1
