@@ -31,7 +31,20 @@ def make_hilbert_reference(num_particles):
     return coords
 
 def make_nagano_reference():
-    raise NotImplementedError
+    from h5py import File
+    from numpy import array, concatenate
+    from glob import glob
+    from os.path import join, dirname
+
+    ensemble = []
+    data = join(dirname(__file__), 'nagano_models', '*.hdf5')
+
+    for path in glob(data):
+        file = File(path)
+        coords = file['/structures/0/coords/X']
+        ensemble.append(coords)
+
+    return concatenate(ensemble)
 
 def make_interpolated_trajectory():
     raise NotImplementedError
@@ -78,10 +91,6 @@ def make_pair_restraints(ensemble, num_restraints, cutoff_distance=None):
     from scipy.spatial.distance import cdist
 
     restraints = data.pair_restraints()
-
-    if data.are_coords(ensemble):
-        ensemble = np.array([ensemble])
-
     data.require_ensemble(ensemble)
 
     if cutoff_distance is None:
@@ -109,6 +118,13 @@ def make_pair_restraints(ensemble, num_restraints, cutoff_distance=None):
             restraints[index_1, index_2] += 1
 
     return restraints
+
+def find_average_bond_length(coords):
+    diff = coords[:-1] - coords[1:]
+    diff_sqr = diff**2
+    lengths_sqr = np.sum(diff_sqr, axis=1)
+    lengths = np.sqrt(sum_diff_sqr)
+    return np.mean(lengths)
 
 def superimpose_model(model, reference):
     from numpy import eye, sign, mean, matrix
@@ -223,18 +239,23 @@ if __name__ == '__main__':
     assert tuple(hilbert_coords[6]) == (1, 1, 0)
     assert tuple(hilbert_coords[7]) == (0, 1, 0)
 
+    ## Test make_nagano_reference()
+
+    nagano_ensemble = make_nagano_reference()
+    data.require_ensemble(nagano_ensemble)
+
     ## Test make_xyz_restraints()
 
     xyz_restraints = make_xyz_restraints(hilbert_coords, 2)
     assert all(np.abs(np.diff(xyz_restraints.keys())) >= 8 // 2)
 
-    ## Test make_hic_restraints()
+    ## Test make_pair_restraints()
 
     hilbert_ensemble = np.array([hilbert_coords])
-    hic_restraints = make_hic_restraints(hilbert_ensemble, 10)
-    assert all(np.abs(np.diff(hic_restraints.keys())) >= 2)
+    pair_restraints = make_pair_restraints(hilbert_ensemble, 10)
+    assert all(np.abs(np.diff(pair_restraints.keys())) >= 2)
 
-    ## Test score_model()
+    ## Test evaluate_model()
 
     reference = np.array([
         [1.0, 0.0, 1.0],
@@ -250,7 +271,7 @@ if __name__ == '__main__':
         [0.0, 0.0, 3.0],
     ])
 
-    score = score_model(model, reference)
+    score = evaluate_model(model, reference)
 
     assert score == np.sqrt(2)
 

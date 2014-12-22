@@ -428,7 +428,7 @@ def print_restraint_satisfaction(system):
     for restraint in system.get_root_restraint_set().get_restraints():
         print '{}: {}'.format(restraint.get_name(), restraint.get_last_score())
 
-def export_to_pdb(pdb_path, model, reference, xyz_restraints):
+def export_to_pdb(pdb_path, model, reference=None, xyz_restraints=None):
     """
     Export the whole scene to a pdb file.  The model and reference structures 
     will be put in separate chains.  Another chain will be created containing 
@@ -475,8 +475,11 @@ def export_to_pdb(pdb_path, model, reference, xyz_restraints):
     coords_to_pdb.atom_id = 1
     coords_to_pdb.chain_id = 0
 
-    coords_to_pdb(reference)
-    coords_to_pdb(xyz_restraints.values(), conect=False)
+    if reference is not None:
+        coords_to_pdb(reference)
+    if xyz_restraints is not None:
+        coords_to_pdb(xyz_restraints.values(), conect=False)
+
     coords_to_pdb(model)
     
     with open(pdb_path, 'w') as file:
