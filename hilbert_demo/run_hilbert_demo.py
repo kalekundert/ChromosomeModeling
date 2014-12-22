@@ -5,14 +5,15 @@ import chromosome_modeler as cmod
 from libraries import utils
 
 params = utils.read_params()
-num_particles = params['num_particles']
 num_xyz_restraints = params['num_xyz_restraints']
 num_pair_restraints = params['num_pair_restraints']
 
 models = {}
-reference = cmod.toy.make_hilbert_reference(num_particles)
-xyz_restraints = cmod.toy.make_xyz_restraints(reference, num_xyz_restraints)
-pair_restraints = cmod.toy.make_pair_restraints(reference, num_pair_restraints)
+reference_ensemble = cmod.toy.make_nagano_reference()
+reference = reference_ensemble[0]
+num_particles = len(reference)
+xyz_restraints = cmod.toy.make_xyz_restraints(reference[0], num_xyz_restraints)
+pair_restraints = cmod.toy.make_pair_restraints(reference_ensemble, num_pair_restraints)
 annealing_protocol = cmod.define_protocol(3e4, [10.0, 1.0, 0.1])
 
 print 'num_particles, num_xyz_restraints, num_pair_restraints = {}, {}, {}'.format(
@@ -42,14 +43,12 @@ models['xyz_md'] = cmod.build_md_model(
         num_particles,
         xyz_restraints=xyz_restraints,
         protocol=annealing_protocol,
-        movie_path=movie_path_template.format('xyz_md'),
 )
 print ' ', now(), 'pair_md...'
 models['pair_md'] = cmod.build_md_model(
         num_particles,
         pair_restraints=pair_restraints,
         protocol=annealing_protocol,
-        movie_path=movie_path_template.format('pair_md'),
 )
 print ' ', now(), 'xyz_pair_min...'
 models['xyz_pair_min'] = cmod.build_minimized_model(
@@ -63,7 +62,6 @@ models['xyz_pair_md'] = cmod.build_md_model(
         xyz_restraints=xyz_restraints,
         pair_restraints=pair_restraints,
         protocol=annealing_protocol,
-        movie_path=movie_path_template.format('xyz_pair_md'),
 )
 print ' ', now(), 'done.'
 print
@@ -75,10 +73,11 @@ for key, model in models.items():
     path = pdb_path_template.format(key)
     cmod.export_to_pdb(path, model, reference, xyz_restraints)
 
-results = {
+results = { 
         'n_xyz': num_xyz_restraints,
         'n_pair': num_pair_restraints,
 }
+
 for key, model in models.items():
     results[key] = cmod.toy.evaluate_model(model, reference)
 
