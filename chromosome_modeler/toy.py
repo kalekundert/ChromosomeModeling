@@ -123,8 +123,8 @@ def find_average_bond_length(coords):
     diff = coords[:-1] - coords[1:]
     diff_sqr = diff**2
     lengths_sqr = np.sum(diff_sqr, axis=1)
-    lengths = np.sqrt(sum_diff_sqr)
-    return np.mean(lengths)
+    lengths = np.sqrt(lengths_sqr)
+    return np.mean(lengths) / 2
 
 def superimpose_model(model, reference):
     from numpy import eye, sign, mean, matrix
