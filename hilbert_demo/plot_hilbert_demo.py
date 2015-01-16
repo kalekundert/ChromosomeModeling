@@ -1,10 +1,13 @@
 #!/usr/bin/env python2
 
-import sys, json, glob
+"""\
+Usage: plot_hilbert_demo.py <dir>
+"""
+
+import sys, os, json, glob, docopt
 import numpy as np
 import pandas as pd
 import pylab as pp
-
 
 import gtk
 import matplotlib
@@ -14,6 +17,8 @@ import pango
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_gtkagg import FigureCanvasGTKAgg
 from matplotlib.backends.backend_gtkagg import NavigationToolbar2GTKAgg
+
+args = docopt.docopt(__doc__)
 
 cols, rows = pd.util.terminal.get_terminal_size()
 pd.set_option('display.max_rows', rows)
@@ -88,7 +93,7 @@ class DemoViewer (gtk.Window):
 
 
 
-json_paths = glob.glob('jsons/*.json')
+json_paths = glob.glob(args['<dir>'] + '/jsons/*.json')
 
 data = []
 
@@ -104,4 +109,4 @@ print
 data = pd.DataFrame(data)
 
 DemoViewer(data)
-gtk.main()
+if not os.fork(): gtk.main()
