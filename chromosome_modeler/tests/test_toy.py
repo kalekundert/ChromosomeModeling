@@ -35,8 +35,7 @@ def test_make_xyz_restraints():
 @finalexam.test
 def test_make_pair_restraints():
     reference = cmod.toy.make_hilbert_reference(8)
-    restraints = cmod.toy.make_pair_restraints(
-            reference, max_distance = 1.5, noise_weight=0)
+    restraints = cmod.toy.make_pair_restraints(reference, max_distance=1.5)
 
     print repr(reference)
     print repr(restraints)

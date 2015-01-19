@@ -45,7 +45,7 @@ def make_nagano_reference():
 
     return concatenate(ensemble)
 
-def make_xyz_restraints(reference, num_restraints):
+def make_xyz_restraints(reference, num_restraints=10):
     """
     Restraint an arbitrary set of well-spaced particles to their reference 
     coordinates.  This mimics the data from a microscopy experiment that has 
@@ -69,7 +69,7 @@ def make_xyz_restraints(reference, num_restraints):
 
     return restraints
 
-def make_pair_restraints(reference, max_distance=10.0, noise_weight=2.0):
+def make_pair_restraints(reference, max_distance=2.0, signal_to_noise=None):
     """
     Return a set of restraints based on the distance between all pairs of 
     particles in each member of the ensemble.  These restraints are meant to 
@@ -80,13 +80,22 @@ def make_pair_restraints(reference, max_distance=10.0, noise_weight=2.0):
     from scipy.spatial.distance import pdist, squareform
 
     # Calculate the pairwise distance between every bead.
-    restraints = squareform(pdist(reference))
+    distances = pdist(reference)
+
+    # If a signal-to-noise ratio is given, add that much noise to the data.  
+    # Distances are picked from a log-normal distribution where the mode is the 
+    # true distance and the standard deviation is calculated to give the right 
+    # signal-to-noise ratio.
+    if signal_to_noise is not None:
+        stddevs = np.sqrt(distances) / signal_to_noise / np.e
+        means = np.log(distances) - stddevs**2
+        distances = np.random.lognormal(means, stddevs)
+
+    # Create a all-by-all restraint matrix.
+    restraints = squareform(distances)
 
     # A negative distance means the beads are at least that far apart.
     restraints[restraints > max_distance] = -max_distance
-
-    # Add a user-controlled amount of noise to the data.
-    restraints += noise_weight * np.random.normal(0.0, 1.0, restraints.shape)
 
     return restraints
 
@@ -131,7 +140,7 @@ def superimpose_model(model, reference):
 
     rotation = W.T * I * V.T
 
-    # Save the aligned coordinates.
+    # Return the aligned coordinates.
     
     return np.array(rotation * mobile + translation).T
 
