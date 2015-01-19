@@ -213,6 +213,10 @@ def define_linear_protocol(iterations, start_temp, end_temp, steps):
     temperatures = np.linspace(start_temp, end_temp, steps)
     return define_protocol(iterations, temperatures)
 
+def define_logarithmic_protocol(iterations, start_temp, end_temp, steps):
+    temperatures = np.logspace(np.log10(start_temp), np.log10(end_temp), steps)
+    return define_protocol(iterations, temperatures)
+
 def equilibrate_system(system, **kwargs):
     k_equ = float(kwargs.pop('k_equ', 1.0))
     w_equ = float(kwargs.pop('w_equ', 1.0))
@@ -306,7 +310,8 @@ def run_molecular_dynamics(system, **kwargs):
                 convert_system_to_movie_frame(writer, system)
 
             if progress_bar:
-                sys.stdout.write('\r[{}/{}]'.format(movie_frame, movie_frames))
+                sys.stdout.write('\r[{}/{}] (T={:.2f})         '.format(
+                    movie_frame, movie_frames, temperature))
                 sys.stdout.flush()
 
         if iterations_this_step:

@@ -1,31 +1,37 @@
 #!/usr/bin/env python2
 
+import finalexam
+import numpy as np
 import chromosome_modeler as cmod
 
-num_particles = 64
-num_xyz_restraints = 10
+@finalexam.test
+def test_define_linear_protocol():
+    protocol = cmod.define_linear_protocol(3e4, 1e3, 1e-2, 5)
+    expected_protocol = [
+            (6000.0, 1000.0),
+            (6000.0, 750.0025), 
+            (6000.0, 500.005),
+            (6000.0, 250.0075),
+            (6000.0, 0.01),
+    ]
+    assert np.allclose(protocol, expected_protocol), protocol
 
-reference = cmod.toy.make_hilbert_reference(num_particles)
-xyz_restraints = cmod.toy.make_xyz_restraints(reference, num_xyz_restraints)
-pair_restraints = cmod.toy.make_pair_restraints(reference, max_distance=1.5, noise_weight=0)
+@finalexam.test
+def test_define_logarithmic_protocol():
+    protocol = cmod.define_logarithmic_protocol(3e4, 1e3, 1e-2, 5)
+    expected_protocol = [
+            (6000.0, 1000.0),
+            (6000.0, 56.234132519034908),
+            (6000.0, 3.1622776601683795),
+            (6000.0, 0.17782794100389229),
+            (6000.0, 0.01),
+    ]
+    assert np.allclose(protocol, expected_protocol), protocol
 
-system = cmod.define_system(
-        num_particles,
-        xyz_restraints=xyz_restraints,
-        pair_restraints=pair_restraints,
-        initial_coords='interpolated',
-        nonbonded='excluded-volume',
-)
-model = cmod.run_molecular_dynamics(
-        system,
-        frames=100,
-        progress_bar=True,
-        movie_path='md_test.pym',
-)[-1]
 
-cmod.print_restraint_satisfaction(system)
-print 'Reference RMSD:', cmod.toy.evaluate_model(model, reference)
-cmod.export_to_pdb('md_test.pdb', model, reference, xyz_restraints)
+if __name__ == '__main__':
+    finalexam.title("Testing the chromosome model...")
+    finalexam.run()
 
 
 
