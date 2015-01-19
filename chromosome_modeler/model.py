@@ -67,8 +67,10 @@ def define_system(num_particles, **kwargs):
     nonbonded = kwargs.pop('nonbonded', 'excluded-volume')
     k_bonded = float(kwargs.pop('k_bonded', 1.0))
     k_nonbonded = float(kwargs.pop('k_nonbonded', 5.0))
-    k_xyz = float(kwargs.pop('k_xyz', 10.0))
+    k_xyz = float(kwargs.pop('k_xyz', 1.0))
     k_pair = float(kwargs.pop('k_pair', 1.0))
+    w_xyz = 10.0 * float(kwargs.pop('w_xyz', 1.0))
+    w_pair = 10.0 * float(kwargs.pop('w_pair', 1.0))
     lj_well_depth = float(kwargs.pop('lj_depth', 1e-2))
     nblist_cutoff = float(kwargs.pop('nblist_cutoff', 3.0 * particle_radius))
     imp_logging = kwargs.pop('imp_logging', False)
@@ -149,7 +151,8 @@ def define_system(num_particles, **kwargs):
     ## Coordinate restraints (from microscopy data)
 
     if xyz_restraints is not None:
-        res_set = IMP.kernel.RestraintSet(system, "Coordinate Restraints")
+        res_set = IMP.kernel.RestraintSet(
+                system, w_xyz / len(xyz_restraints), "Coordinate Restraints")
 
         for i, coord in xyz_restraints.items():
             particle = particle_list[i]
@@ -163,12 +166,23 @@ def define_system(num_particles, **kwargs):
     ## Pair restraints (from Hi-C data)
 
     if pair_restraints is not None:
-        hdps = IMP.core.HarmonicDistancePairScore(1.5 * particle_radius, k_pair)
-        pairs = IMP.container.ListPairContainer(
-             [(particle_list[i], particle_list[j]) for i,j in pair_restraints])
-        res = IMP.container.PairsRestraint(hdps, pairs, "Pair Restraints")
-        system.add_restraint(res)
+        assert len(pair_restraints) == num_particles
+        from scipy.misc import comb
 
+
+        num_restraints = sum(pair_restraints.flat > 0) / 2
+        res_set = IMP.kernel.RestraintSet(
+                system, w_pair / num_restraints, "Pair Restraints")
+
+        for i, j in itertools.combinations(range(num_particles), 2):
+            distance = pair_restraints[i,j]
+            if distance > 0:
+                pair = particle_list[i], particle_list[j]
+                score = IMP.core.HarmonicDistancePairScore(distance, k_pair)
+                res = IMP.core.PairRestraint(score, pair)
+                res_set.add_restraint(res)
+
+        system.add_restraint(res_set)
 
     return system
 
@@ -426,7 +440,9 @@ def convert_system_to_movie_frame(writer, system):
 
 def print_restraint_satisfaction(system):
     for restraint in system.get_root_restraint_set().get_restraints():
-        print '{}: {}'.format(restraint.get_name(), restraint.get_last_score())
+        print '{}: {}'.format(
+                restraint.get_name(),
+                restraint.get_last_score() * restraint.get_weight())
 
 def export_to_pdb(pdb_path, model, reference=None, xyz_restraints=None):
     """

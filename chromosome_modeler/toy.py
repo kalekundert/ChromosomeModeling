@@ -2,8 +2,7 @@
 
 from __future__ import division
 import numpy as np, scipy as sp
-if __name__ != '__main__': from . import data
-else: import data
+from . import data
 
 def make_hilbert_reference(num_particles):
     """
@@ -46,12 +45,6 @@ def make_nagano_reference():
 
     return concatenate(ensemble)
 
-def make_interpolated_trajectory():
-    raise NotImplementedError
-
-def make_md_trajectory():
-    raise NotImplementedError
-
 def make_xyz_restraints(reference, num_restraints):
     """
     Restraint an arbitrary set of well-spaced particles to their reference 
@@ -76,46 +69,24 @@ def make_xyz_restraints(reference, num_restraints):
 
     return restraints
 
-def make_pair_restraints(ensemble, num_restraints, cutoff_distance=None):
+def make_pair_restraints(reference, max_distance=10.0, noise_weight=2.0):
     """
-    Pick an arbitrary set of neighboring particles to use as pair restraints.  
-    This mimics population Hi-C data, which identifies chromatin contacts 
-    throughout the genome.  Because the same set of neighbors may be picked 
-    more than once, the return value is a histogram.
+    Return a set of restraints based on the distance between all pairs of 
+    particles in each member of the ensemble.  These restraints are meant to 
+    mimic Hi-C data.  The restraints are extracted from an ensemble of 
+    structures to mimic the fact that Hi-C data represents many structures.
     """
 
-    # We will use the random module with a fixed seed to generate arbitrary 
-    # (i.e. irregular) set of pair restraints.
+    from scipy.spatial.distance import pdist, squareform
 
-    import random; random.seed(0)
-    from scipy.spatial.distance import cdist
+    # Calculate the pairwise distance between every bead.
+    restraints = squareform(pdist(reference))
 
-    restraints = data.pair_restraints()
-    data.require_ensemble(ensemble)
+    # A negative distance means the beads are at least that far apart.
+    restraints[restraints > max_distance] = -max_distance
 
-    if cutoff_distance is None:
-        cutoff_distance = 1.1 * np.sqrt(2)
-
-    for i in range(num_restraints):
-
-        # Pick an arbitrary set of coords from the ensemble.
-
-        coords = ensemble[random.randrange(len(ensemble))]
-
-        # Pick an arbitrary particle from those coords.
-
-        index_1 = random.randrange(len(coords))
-
-        # Find all the neighboring particles that are within a certain distance 
-        # but not adjacent in sequence.  Arbitrarily pick one to restrain.
-        
-        pair_distances = cdist([coords[index_1]], coords)[0]
-        pair_distances[max(index_1-1,0):index_1+2] = np.inf
-        neighbors = np.where(pair_distances < cutoff_distance)[0]
-
-        if len(neighbors):
-            index_2 = random.choice(neighbors)
-            restraints[index_1, index_2] += 1
+    # Add a user-controlled amount of noise to the data.
+    restraints += noise_weight * np.random.normal(0.0, 1.0, restraints.shape)
 
     return restraints
 
@@ -222,59 +193,4 @@ def parse_num_restraints(num_restraints, num_particles):
         num_restraints = int(num_restraints)
 
     return min(num_restraints, num_particles)
-
-
-if __name__ == '__main__':
-
-    ## Test make_hilbert_reference()
-
-    hilbert_coords = make_hilbert_reference(8)
-
-    assert tuple(hilbert_coords[0]) == (0, 0, 0)
-    assert tuple(hilbert_coords[1]) == (1, 0, 0)
-    assert tuple(hilbert_coords[2]) == (1, 0, 1)
-    assert tuple(hilbert_coords[3]) == (0, 0, 1)
-    assert tuple(hilbert_coords[4]) == (0, 1, 1)
-    assert tuple(hilbert_coords[5]) == (1, 1, 1)
-    assert tuple(hilbert_coords[6]) == (1, 1, 0)
-    assert tuple(hilbert_coords[7]) == (0, 1, 0)
-
-    ## Test make_nagano_reference()
-
-    nagano_ensemble = make_nagano_reference()
-    data.require_ensemble(nagano_ensemble)
-
-    ## Test make_xyz_restraints()
-
-    xyz_restraints = make_xyz_restraints(hilbert_coords, 2)
-    assert all(np.abs(np.diff(xyz_restraints.keys())) >= 8 // 2)
-
-    ## Test make_pair_restraints()
-
-    hilbert_ensemble = np.array([hilbert_coords])
-    pair_restraints = make_pair_restraints(hilbert_ensemble, 10)
-    assert all(np.abs(np.diff(pair_restraints.keys())) >= 2)
-
-    ## Test evaluate_model()
-
-    reference = np.array([
-        [1.0, 0.0, 1.0],
-        [2.0, 0.0, 1.0],
-        [2.0, 0.0, 2.0],
-        [1.0, 0.0, 2.0],
-    ])
-
-    model = np.array([
-        [0.0, 0.0, 0.0],
-        [3.0, 0.0, 0.0],
-        [3.0, 0.0, 3.0],
-        [0.0, 0.0, 3.0],
-    ])
-
-    score = evaluate_model(model, reference)
-
-    assert score == np.sqrt(2)
-
-
-    print 'All tests passed!'
 
